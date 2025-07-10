@@ -1,0 +1,191 @@
+--- a/style.css
++++ b/style.css
+@@ -1,5 +1,6 @@
+ :root {
+     --board-size: 500px;
++    --path-padding: 40px;
+     --gap: 10px;
+     --background-color: #bbada0;
+     --grid-cell-color: #ccc0b3;
+@@ -219,15 +220,19 @@
+ 
+ #game-board-wrapper {
+     position: relative;
+-    width: var(--board-size);
+-    height: var(--board-size);
++    width: calc(var(--board-size) + (var(--path-padding) * 2));
++    height: calc(var(--board-size) + (var(--path-padding) * 2));
+     flex-shrink: 0;
++    display: flex;
++    justify-content: center;
++    align-items: center;
+ }
+ 
+ #game-board-wrapper.dragging-over {
+     outline: 5px solid #2ecc71;
+     transform: scale(1.02);
+ }
++
+ 
+ #game-board {
+     display: grid;
+@@ -239,7 +244,7 @@
+     padding: var(--gap);
+     box-sizing: border-box;
+     overflow: hidden;
+-    z-index: 6;
++    z-index: 2;
+ }
+ 
+ #game-overlay {
+@@ -512,7 +517,7 @@
+     width: 100%;
+     height: 100%;
+     pointer-events: none;
+-    z-index: 1;
++    z-index: 3;
+ }
+ 
+ .modal-overlay {
+@@ -628,4 +633,14 @@
+         font-size: 1rem;
+         padding: 4px 8px;
+     }
++
++    #game-container {
++        transform: scale(1);
++        flex-direction: column;
++        align-items: center;
++    }
++
++    #combinations-container {
++        height: 250px;
++    }
+ }
+
+
+--- a/tower-defense.js
++++ b/tower-defense.js
+@@ -10,6 +10,7 @@
+         this.waveTimeout = null;
+         this.waveCountdownInterval = null;
+         this.countdownSeconds = 30;
++        this.pathPadding = 40; // From CSS
+         
+         this.onGameOver = null;
+         this.onWaveComplete = null;
+@@ -28,8 +29,10 @@
+         }
+         
+         this.ctx = this.canvas.getContext('2d');
+-        this.canvas.width = 500;
+-        this.canvas.height = 500;
++        const boardSize = 500; // from CSS
++        this.canvas.width = boardSize + (this.pathPadding * 2);
++        this.canvas.height = boardSize + (this.pathPadding * 2);
+         
+         this.startWaveCountdown();
+         this.startGameLoop();
+@@ -219,10 +222,10 @@
+         const row = Math.floor(boardIndex / this.gameState.gridSize);
+         const col = boardIndex % this.gameState.gridSize;
+         const cellSize = 500 / this.gameState.gridSize;
+-        
++
+         return {
+-            x: col * cellSize + cellSize / 2,
+-            y: row * cellSize + cellSize / 2
++            x: this.pathPadding + col * cellSize + cellSize / 2,
++            y: this.pathPadding + row * cellSize + cellSize / 2
+         };
+     }
+     
+@@ -235,10 +238,10 @@
+         this.drawPath();
+         
+         // Draw enemies
+-        this.drawEnemies();
++        this.drawEnemies(); // Enemies and health bars are drawn relative to path, so they are correct
+         
+         // Draw projectiles
+-        this.drawProjectiles();
++        this.drawProjectiles(); // Projectiles use tower position which is now correct
+         
+         // Draw tower ranges (for selected tower)
+         this.drawTowerRanges();
+
+
+--- a/game-state.js
++++ b/game-state.js
+@@ -102,36 +102,23 @@
+     
+     initializePath() {
+         this.path = [];
+-        const pathPadding = 40; // Distance from board edge
++        const pathPadding = 40;
+         const boardSize = 500; // From CSS
+-        const pathWidth = boardSize + (pathPadding * 2);
+-        const pathHeight = boardSize + (pathPadding * 2);
+-        
+-        // Create a rectangular path around the board
+-        const steps = 100;
+-        const perimeter = (pathWidth + pathHeight) * 2;
+-        const stepSize = perimeter / steps;
+-        
+-        for (let i = 0; i < steps; i++) {
+-            const progress = i / steps;
+-            let x, y;
+-            
+-            if (progress < 0.25) {
+-                // Top edge
+-                const edgeProgress = progress * 4;
+-                x = -pathPadding + (edgeProgress * pathWidth);
+-                y = -pathPadding;
+-            } else if (progress < 0.5) {
+-                // Right edge
+-                const edgeProgress = (progress - 0.25) * 4;
+-                x = boardSize + pathPadding;
+-                y = -pathPadding + (edgeProgress * pathHeight);
+-            } else if (progress < 0.75) {
+-                // Bottom edge
+-                const edgeProgress = (progress - 0.5) * 4;
+-                x = boardSize + pathPadding - (edgeProgress * pathWidth);
+-                y = boardSize + pathPadding;
+-            } else {
+-                // Left edge
+-                const edgeProgress = (progress - 0.75) * 4;
+-                x = -pathPadding;
+-                y = boardSize + pathPadding - (edgeProgress * pathHeight);
+-            }
+-            
+-            this.path.push({ x, y });
+-        }
++        const totalWidth = boardSize + pathPadding * 2;
++        const totalHeight = boardSize + pathPadding * 2;
++    
++        const pathPoints = [
++            { x: pathPadding, y: pathPadding }, // Top-left corner of path
++            { x: totalWidth - pathPadding, y: pathPadding }, // Top-right
++            { x: totalWidth - pathPadding, y: totalHeight - pathPadding }, // Bottom-right
++            { x: pathPadding, y: totalHeight - pathPadding }, // Bottom-left
++        ];
++
++        // Generate points along the rectangular path for smooth movement
++        const addPointsBetween = (p1, p2) => {
++            const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
++            const steps = Math.floor(dist / 10);
++            for (let i = 0; i < steps; i++) {
++                this.path.push({
++                    x: p1.x + (p2.x - p1.x) * (i / steps),
++                    y: p1.y + (p2.y - p1.y) * (i / steps)
++                });
++            }
++        };
++        
++        addPointsBetween(pathPoints[0], pathPoints[1]);
++        addPointsBetween(pathPoints[1], pathPoints[2]);
++        addPointsBetween(pathPoints[2], pathPoints[3]);
++        addPointsBetween(pathPoints[3], pathPoints[0]);
+     }
+     
+     getNewBlockValue() {
