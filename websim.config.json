@@ -1,0 +1,33 @@
+{
+  "database": {
+    "schema": {
+      "scores": {
+        "score": {
+          "type": "integer",
+          "description": "The player's final score for the game."
+        },
+        "difficulty": {
+          "type": "text",
+          "description": "The difficulty level of the game (easy, medium, hard, zen)."
+        },
+        "theme": {
+          "type": "text",
+          "description": "The theme used for the game blocks/towers."
+        },
+        "event_log": {
+          "type": "jsonb",
+          "description": "A JSON array of events that occurred during the game."
+        },
+        "wave_reached": {
+          "type": "integer",
+          "description": "The highest wave number reached in the game."
+        },
+        "towers_built": {
+          "type": "integer",
+          "description": "The total number of towers built during the game."
+        }
+      }
+    }
+  }
+}
+
