@@ -30,11 +30,69 @@ export class TowerDefenseManager {
         }
         
         this.ctx = this.canvas.getContext('2d');
-        this.canvas.width = 500;
-        this.canvas.height = 500;
+        // Increase canvas size to accommodate the path padding
+        this.canvas.width = 580;
+        this.canvas.height = 580;
         
-        this.startWaveCountdown();
-        this.startGameLoop();
+        this.render = Matter.Render.create({
+            canvas: this.canvas,
+            engine: this.engine,
+            options: {
+                width: 580,
+                height: 580,
+                wireframes: false,
+                background: 'transparent',
+                showAngleIndicator: false,
+                showVelocity: false
+            }
+        });
+
+        this.createHourglassStructure();
+        this.createSandGrains(numGrains);
+        
+        Matter.Engine.run(this.engine);
+        Matter.Render.run(this.render);
+        
+        this.startSandFallCheck();
+    }
+    
+    initializePath() {
+        this.path = [];
+        const pathPadding = 40; // Distance from board edge
+        const boardSize = 500; // From CSS
+        const canvasOffset = 40; // Offset to center the board in the larger canvas
+        
+        // Create a rectangular path around the board
+        const steps = 120;
+        
+        for (let i = 0; i < steps; i++) {
+            const progress = i / steps;
+            let x, y;
+            
+            if (progress < 0.25) {
+                // Top edge (left to right)
+                const edgeProgress = progress * 4;
+                x = canvasOffset - pathPadding + (edgeProgress * (boardSize + pathPadding * 2));
+                y = canvasOffset - pathPadding;
+            } else if (progress < 0.5) {
+                // Right edge (top to bottom)
+                const edgeProgress = (progress - 0.25) * 4;
+                x = canvasOffset + boardSize + pathPadding;
+                y = canvasOffset - pathPadding + (edgeProgress * (boardSize + pathPadding * 2));
+            } else if (progress < 0.75) {
+                // Bottom edge (right to left)
+                const edgeProgress = (progress - 0.5) * 4;
+                x = canvasOffset + boardSize + pathPadding - (edgeProgress * (boardSize + pathPadding * 2));
+                y = canvasOffset + boardSize + pathPadding;
+            } else {
+                // Left edge (bottom to top)
+                const edgeProgress = (progress - 0.75) * 4;
+                x = canvasOffset - pathPadding;
+                y = canvasOffset + boardSize + pathPadding - (edgeProgress * (boardSize + pathPadding * 2));
+            }
+            
+            this.path.push({ x, y });
+        }
     }
     
     startWaveCountdown() {
@@ -162,7 +220,7 @@ export class TowerDefenseManager {
         
         this.gameState.enemies.forEach(enemy => {
             // Move enemy along path
-            enemy.pathProgress += enemy.speed * 0.01;
+            enemy.pathProgress += enemy.speed * 0.008; // Slower movement for visibility
             
             if (enemy.pathProgress >= 1) {
                 enemy.pathProgress = 0;
@@ -278,10 +336,11 @@ export class TowerDefenseManager {
         const row = Math.floor(boardIndex / this.gameState.gridSize);
         const col = boardIndex % this.gameState.gridSize;
         const cellSize = 500 / this.gameState.gridSize;
+        const canvasOffset = 40; // Match the offset used in path creation
         
         return {
-            x: col * cellSize + cellSize / 2,
-            y: row * cellSize + cellSize / 2
+            x: canvasOffset + col * cellSize + cellSize / 2,
+            y: canvasOffset + row * cellSize + cellSize / 2
         };
     }
     
@@ -301,11 +360,33 @@ export class TowerDefenseManager {
         
         // Draw tower ranges (for selected tower)
         this.drawTowerRanges();
+        
+        // Draw tower firing effects
+        this.drawTowerEffects();
     }
     
     drawPath() {
         if (this.gameState.path.length === 0) return;
         
+        // Draw the path background
+        this.ctx.strokeStyle = 'rgba(139, 69, 19, 0.3)';
+        this.ctx.lineWidth = 35;
+        this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round';
+        this.ctx.beginPath();
+        
+        this.gameState.path.forEach((point, index) => {
+            if (index === 0) {
+                this.ctx.moveTo(point.x, point.y);
+            } else {
+                this.ctx.lineTo(point.x, point.y);
+            }
+        });
+        
+        this.ctx.closePath();
+        this.ctx.stroke();
+        
+        // Draw the path center line
         this.ctx.strokeStyle = '#8B4513';
         this.ctx.lineWidth = 20;
         this.ctx.beginPath();
@@ -320,36 +401,127 @@ export class TowerDefenseManager {
         
         this.ctx.closePath();
         this.ctx.stroke();
+        
+        // Draw path edges
+        this.ctx.strokeStyle = '#654321';
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([5, 5]);
+        this.ctx.beginPath();
+        
+        this.gameState.path.forEach((point, index) => {
+            if (index === 0) {
+                this.ctx.moveTo(point.x, point.y);
+            } else {
+                this.ctx.lineTo(point.x, point.y);
+            }
+        });
+        
+        this.ctx.closePath();
+        this.ctx.stroke();
+        this.ctx.setLineDash([]); // Reset line dash
     }
     
     drawEnemies() {
         this.gameState.enemies.forEach(enemy => {
             const imageUrl = this.gameState.enemyImages[enemy.type];
             
+            // Draw enemy shadow
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            this.ctx.fillRect(enemy.x - 12, enemy.y - 8, 24, 16);
+            
             if (imageUrl && imageUrl !== 'loading') {
-                // Draw enemy image (would need to load image first)
-                this.ctx.fillStyle = '#ff0000';
+                // TODO: Load and draw actual enemy image
+                // For now, draw a styled enemy
+                this.ctx.fillStyle = this.getEnemyColor(enemy.type);
             } else {
-                this.ctx.fillStyle = '#ff0000';
+                this.ctx.fillStyle = this.getEnemyColor(enemy.type);
             }
             
-            this.ctx.fillRect(enemy.x - 10, enemy.y - 10, 20, 20);
+            // Draw enemy body
+            this.ctx.fillRect(enemy.x - 15, enemy.y - 15, 30, 30);
+            
+            // Draw enemy outline
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(enemy.x - 15, enemy.y - 15, 30, 30);
+            
+            // Draw health bar background
+            this.ctx.fillStyle = '#333';
+            this.ctx.fillRect(enemy.x - 20, enemy.y - 25, 40, 6);
             
             // Draw health bar
-            this.ctx.fillStyle = '#333';
-            this.ctx.fillRect(enemy.x - 15, enemy.y - 20, 30, 4);
-            this.ctx.fillStyle = '#00ff00';
             const healthPercent = enemy.health / enemy.maxHealth;
-            this.ctx.fillRect(enemy.x - 15, enemy.y - 20, 30 * healthPercent, 4);
+            this.ctx.fillStyle = healthPercent > 0.6 ? '#00ff00' : healthPercent > 0.3 ? '#ffff00' : '#ff0000';
+            this.ctx.fillRect(enemy.x - 20, enemy.y - 25, 40 * healthPercent, 6);
+            
+            // Draw health bar border
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(enemy.x - 20, enemy.y - 25, 40, 6);
         });
+    }
+    
+    getEnemyColor(type) {
+        const colors = {
+            'basic': '#ff4444',
+            'fast': '#44ff44',
+            'armored': '#4444ff',
+            'boss': '#ff44ff'
+        };
+        return colors[type] || '#ff0000';
     }
     
     drawProjectiles() {
         Object.values(this.gameState.towers).forEach(tower => {
             tower.projectiles.forEach(projectile => {
+                // Draw projectile trail
+                this.ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+                this.ctx.lineWidth = 3;
+                this.ctx.lineCap = 'round';
+                this.ctx.beginPath();
+                this.ctx.moveTo(projectile.x - 2, projectile.y - 2);
+                this.ctx.lineTo(projectile.x + 2, projectile.y + 2);
+                this.ctx.stroke();
+                
+                // Draw projectile
                 this.ctx.fillStyle = '#ffff00';
+                this.ctx.fillRect(projectile.x - 4, projectile.y - 4, 8, 8);
+                
+                // Draw projectile glow
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
                 this.ctx.fillRect(projectile.x - 2, projectile.y - 2, 4, 4);
             });
+        });
+    }
+    
+    drawTowerEffects() {
+        const currentTime = Date.now();
+        
+        Object.entries(this.gameState.towers).forEach(([index, tower]) => {
+            const boardIndex = parseInt(index);
+            const towerPos = this.getBoardPosition(boardIndex);
+            
+            // Draw firing effect if tower recently fired
+            const timeSinceFired = currentTime - tower.lastFired;
+            if (timeSinceFired < 200) { // Show effect for 200ms
+                const intensity = 1 - (timeSinceFired / 200);
+                
+                // Draw muzzle flash
+                this.ctx.fillStyle = `rgba(255, 255, 0, ${intensity * 0.8})`;
+                this.ctx.beginPath();
+                this.ctx.arc(towerPos.x, towerPos.y, 15 * intensity, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Draw firing line to target
+                if (tower.target) {
+                    this.ctx.strokeStyle = `rgba(255, 0, 0, ${intensity * 0.6})`;
+                    this.ctx.lineWidth = 3 * intensity;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(towerPos.x, towerPos.y);
+                    this.ctx.lineTo(tower.target.x, tower.target.y);
+                    this.ctx.stroke();
+                }
+            }
         });
     }
     
